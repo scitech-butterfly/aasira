@@ -1,10 +1,10 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { courseModules } from '../data';
 import type { Module, ModuleStatus, User } from '../types';
 import { CourseCard } from '../components/CourseCard';
 import { ModuleView } from '../components/ModuleView';
 import { QuizView } from '../components/QuizView';
+import { progressApi } from '../services/api';
 
 type ViewMode = 'list' | 'module' | 'quiz' | 'results';
 
@@ -26,36 +26,43 @@ interface CoursesViewProps {
 }
 
 export const CoursesView: React.FC<CoursesViewProps> = ({ currentUser }) => {
-  const progressKey = `aasiraCourseProgress_${currentUser.id}`;
   const quizStateKey = `aasiraQuizState_${currentUser.id}`;
 
-  const [moduleStatuses, setModuleStatuses] = useState<ModuleStatus[]>(() => {
-    try {
-      const savedProgress = localStorage.getItem(progressKey);
-      if (savedProgress) {
-        const parsedProgress = JSON.parse(savedProgress);
-        return parsedProgress;
-      }
-    } catch (error) {
-      console.error("Failed to parse course progress from localStorage", error);
-      localStorage.removeItem(progressKey);
-    }
-    
-    return courseModules.map((m, index) => ({
-      moduleId: m.id,
-      status: index === 0 ? 'unlocked' : 'locked',
-    }));
-  });
-
+  const [moduleStatuses, setModuleStatuses] = useState<ModuleStatus[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [selectedModule, setSelectedModule] = useState<Module | null>(null);
   const [quizResult, setQuizResult] = useState<QuizResult | null>(null);
   const [initialQuizState, setInitialQuizState] = useState<{ currentQuestionIndex: number; selectedAnswers: Record<number, string>; endTime?: number } | null>(null);
 
+  // Load progress from API
   useEffect(() => {
-    localStorage.setItem(progressKey, JSON.stringify(moduleStatuses));
-  }, [moduleStatuses, progressKey]);
+    const loadProgress = async () => {
+      try {
+        setLoading(true);
+        const progressData = await progressApi.getProgress();
+        setModuleStatuses(progressData.moduleStatuses);
+        setError(null);
+      } catch (err: any) {
+        console.error('Error loading progress:', err);
+        setError(err.message || 'Failed to load progress');
+        // Initialize default progress if API fails
+        setModuleStatuses(
+          courseModules.map((m, index) => ({
+            moduleId: m.id,
+            status: index === 0 ? 'unlocked' : 'locked',
+          }))
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
 
+    loadProgress();
+  }, []);
+
+  // Check for saved quiz state in localStorage
   useEffect(() => {
     const savedQuizStateRaw = localStorage.getItem(quizStateKey);
     if (savedQuizStateRaw) {
@@ -71,7 +78,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ currentUser }) => {
           });
           setViewMode('quiz');
         } else {
-           localStorage.removeItem(quizStateKey);
+          localStorage.removeItem(quizStateKey);
         }
       } catch (e) {
         console.error("Failed to parse quiz state", e);
@@ -96,32 +103,43 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ currentUser }) => {
     }
   };
 
-  const handleCompleteQuiz = useCallback((moduleId: number, score: number, total: number) => {
+  const handleCompleteQuiz = useCallback(async (moduleId: number, score: number, total: number) => {
     localStorage.removeItem(quizStateKey);
     const passed = (score / total) * 100 >= 60;
     setQuizResult({ score, total, passed });
     setViewMode('results');
 
     if (passed) {
-      setModuleStatuses(prevStatuses => {
-        const newStatuses = [...prevStatuses];
-        const currentModuleIndex = newStatuses.findIndex(s => s.moduleId === moduleId);
-        
-        if (currentModuleIndex !== -1) {
-          newStatuses[currentModuleIndex].status = 'completed';
+      const newStatuses = [...moduleStatuses];
+      const currentModuleIndex = newStatuses.findIndex(s => s.moduleId === moduleId);
+      
+      if (currentModuleIndex !== -1) {
+        newStatuses[currentModuleIndex].status = 'completed';
+      }
+      
+      const nextModuleIndex = currentModuleIndex + 1;
+      if (nextModuleIndex < newStatuses.length) {
+        if (newStatuses[nextModuleIndex].status === 'locked') {
+          newStatuses[nextModuleIndex].status = 'unlocked';
         }
-        
-        const nextModuleIndex = currentModuleIndex + 1;
-        if (nextModuleIndex < newStatuses.length) {
-          if (newStatuses[nextModuleIndex].status === 'locked') {
-             newStatuses[nextModuleIndex].status = 'unlocked';
-          }
-        }
+      }
 
-        return newStatuses;
-      });
+      setModuleStatuses(newStatuses);
+
+      // Save to API
+      try {
+        await progressApi.updateProgress(newStatuses, {
+          moduleId,
+          score,
+          total,
+          passed
+        });
+      } catch (err: any) {
+        console.error('Error saving progress:', err);
+        // Don't show error to user, progress is saved locally
+      }
     }
-  }, [quizStateKey]);
+  }, [moduleStatuses, quizStateKey]);
 
   const handleReturnToList = () => {
     localStorage.removeItem(quizStateKey);
@@ -136,6 +154,17 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ currentUser }) => {
     setViewMode('quiz');
   };
   
+  if (loading) {
+    return (
+      <div className="container mx-auto">
+        <h1 className="text-3xl md:text-4xl font-bold text-nexus-purple mb-6">Courses</h1>
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-nexus-pink"></div>
+        </div>
+      </div>
+    );
+  }
+
   const totalCompleted = moduleStatuses.filter(s => s.status === 'completed').length;
   const totalModules = courseModules.length;
   const progressPercentage = (totalCompleted / totalModules) * 100;
@@ -191,6 +220,11 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ currentUser }) => {
       default:
         return (
            <>
+             {error && (
+               <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+                 {error}
+               </div>
+             )}
              <div className="mb-8 p-6 bg-white rounded-lg shadow-md">
                 <h2 className="text-xl font-bold text-nexus-purple mb-2">Welcome, {currentUser.username}!</h2>
                 <p className="text-sm text-nexus-brown/80 mb-3">Here is your course progress.</p>

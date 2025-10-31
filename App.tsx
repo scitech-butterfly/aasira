@@ -6,18 +6,19 @@ import { OrganizationsView } from './views/OrganizationsView';
 import { StudyMaterialView } from './views/StudyMaterialView';
 import { LoginView } from './views/LoginView';
 import type { User } from './types';
-import { seedInitialUsers } from './data';
-
+import { authApi } from './services/api';
 
 export type Page = 'courses' | 'glossary' | 'organizations' | 'study_material';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
-      const savedUser = localStorage.getItem('aasiraCurrentUser');
-      if (savedUser) return JSON.parse(savedUser);
+      const savedUser = sessionStorage.getItem('aasiraCurrentUser');
+      if (savedUser && authApi.isAuthenticated()) {
+        return JSON.parse(savedUser);
+      }
     } catch (e) {
-      return null;
+      console.error('Error loading user:', e);
     }
     return null;
   });
@@ -25,25 +26,22 @@ const App: React.FC = () => {
   const [activePage, setActivePage] = useState<Page>('courses');
 
   useEffect(() => {
-    // Seed initial users for demonstration purposes if they don't exist
-    seedInitialUsers();
-  }, []);
-
-  useEffect(() => {
     if (currentUser) {
-      localStorage.setItem('aasiraCurrentUser', JSON.stringify(currentUser));
+      sessionStorage.setItem('aasiraCurrentUser', JSON.stringify(currentUser));
     } else {
-      localStorage.removeItem('aasiraCurrentUser');
+      sessionStorage.removeItem('aasiraCurrentUser');
     }
   }, [currentUser]);
 
   const handleLoginSuccess = (user: User) => {
     setCurrentUser(user);
-    setActivePage('courses'); // Go to default page on login
+    setActivePage('courses');
   };
 
   const handleLogout = () => {
+    authApi.logout();
     setCurrentUser(null);
+    sessionStorage.clear();
   };
 
   if (!currentUser) {

@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
 import type { Role, User } from '../types';
-import { login, signup } from '../data';
+import { authApi } from '../services/api';
 
 interface LoginViewProps {
   onLoginSuccess: (user: User) => void;
@@ -16,21 +15,25 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [password, setPassword] = useState('');
   const [organizerKey, setOrganizerKey] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
     try {
       let user: User;
       if (mode === 'login') {
-        user = login(username, password);
+        user = await authApi.login(username, password);
       } else {
-        user = signup(username, password, role, role === 'organizer' ? organizerKey : undefined);
+        user = await authApi.register(username, password, role, role === 'organizer' ? organizerKey : undefined);
       }
       onLoginSuccess(user);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'An error occurred');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -81,6 +84,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 className="w-full text-base py-2 border-b border-gray-300 focus:outline-none focus:border-nexus-pink bg-transparent text-nexus-brown placeholder:text-gray-400"
                 placeholder="Enter your username"
                 required
+                disabled={loading}
               />
             </div>
             
@@ -94,6 +98,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 className="w-full text-base py-2 border-b border-gray-300 focus:outline-none focus:border-nexus-pink bg-transparent text-nexus-brown placeholder:text-gray-400"
                 placeholder="Enter your password"
                 required
+                disabled={loading}
               />
             </div>
 
@@ -108,6 +113,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   className="w-full text-base py-2 border-b border-gray-300 focus:outline-none focus:border-nexus-pink bg-transparent text-nexus-brown placeholder:text-gray-400"
                   placeholder="Enter your organizer key"
                   required
+                  disabled={loading}
                 />
               </div>
             )}
@@ -115,13 +121,22 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             {error && <p className="text-sm text-red-500 text-center">{error}</p>}
 
             <div>
-              <button type="submit" className="w-full flex justify-center bg-nexus-pink text-gray-100 p-3 rounded-full tracking-wide font-semibold shadow-lg cursor-pointer transition ease-in duration-300 hover:bg-opacity-90 transform hover:scale-105">
-                {isSignup ? 'Sign Up' : 'Sign In'}
+              <button 
+                type="submit" 
+                disabled={loading}
+                className="w-full flex justify-center bg-nexus-pink text-gray-100 p-3 rounded-full tracking-wide font-semibold shadow-lg cursor-pointer transition ease-in duration-300 hover:bg-opacity-90 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+              >
+                {loading ? 'Please wait...' : (isSignup ? 'Sign Up' : 'Sign In')}
               </button>
             </div>
             
             <div className="text-center text-sm">
-              <button type="button" onClick={() => { setMode(isSignup ? 'login' : 'signup'); setError('')}} className="font-medium text-nexus-purple hover:text-nexus-pink">
+              <button 
+                type="button" 
+                onClick={() => { setMode(isSignup ? 'login' : 'signup'); setError(''); }} 
+                className="font-medium text-nexus-purple hover:text-nexus-pink"
+                disabled={loading}
+              >
                 {isSignup ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
               </button>
             </div>
