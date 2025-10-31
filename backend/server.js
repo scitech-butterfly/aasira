@@ -12,7 +12,7 @@ const app = express();
 // CORS configuration for production
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://scitech-butterfly.github.io/aasira-app',
+  'https://scitech-butterfly.github.io/aasira',
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
